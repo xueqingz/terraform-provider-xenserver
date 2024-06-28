@@ -54,10 +54,10 @@ func (r *srResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *r
 				Default:             stringdefault.StaticString(""),
 			},
 			"type": schema.StringAttribute{
-				MarkdownDescription: `The type of the storage repository, default to be ""`,
+				MarkdownDescription: `The type of the storage repository, default to be "dummy"`,
 				Optional:            true,
 				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				Default:             stringdefault.StaticString("dummy"),
 			},
 			"content_type": schema.StringAttribute{
 				MarkdownDescription: `The type of the SR's content, if required (e.g. ISOs), default to be ""`,
@@ -66,10 +66,10 @@ func (r *srResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *r
 				Default:             stringdefault.StaticString(""),
 			},
 			"shared": schema.BoolAttribute{
-				MarkdownDescription: `True if this SR is (capable of being) shared between multiple hosts, default to be true`,
+				MarkdownDescription: `True if this SR is (capable of being) shared between multiple hosts, default to be false`,
 				Optional:            true,
 				Computed:            true,
-				Default:             booldefault.StaticBool(true),
+				Default:             booldefault.StaticBool(false),
 			},
 			"sm_config": schema.MapAttribute{
 				MarkdownDescription: "The SM dependent data, default to be {}",
