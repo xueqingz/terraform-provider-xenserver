@@ -31,6 +31,8 @@ resource "xenserver_vdi" "vdi2" {
   virtual_size = 100 * 1024 * 1024 * 1024
 }
 
+data "xenserver_network" "network" {}
+
 resource "xenserver_vm" "vm" {
   name_label    = "A test virtual-machine"
   template_name = "Windows 11"
@@ -44,6 +46,24 @@ resource "xenserver_vm" "vm" {
       vdi_uuid = xenserver_vdi.vdi2.id,
       bootable = false,
       mode     = "RO"
+    },
+  ]
+  network_interface = [
+    # {
+    #   network_uuid = data.xenserver_network.network.data_items[0].uuid,
+    #   mtu          = 1500,
+    #   mac          = "00:11:22:33:44:55",
+    #   other_config = {
+    #     ethtool-gso = "off"
+    #     ethtool-ufo = "off"
+    #     ethtool-tso = "off"
+    #     ethtool-sg = "off"
+    #     ethtool-tx = "off"
+    #     ethtool-rx = "off"
+    #   }
+    # },
+    {
+      network_uuid = data.xenserver_network.network.data_items[1].uuid,
     },
   ]
 }

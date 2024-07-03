@@ -52,6 +52,40 @@ func (r *vmResource) Configure(_ context.Context, req resource.ConfigureRequest,
 	r.session = session
 }
 
+// func (r *vmResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+// 	// Ignore plan modification if plan is null (on destroy).
+// 	if req.Plan.Raw.IsNull() {
+// 		return
+// 	}
+
+// 	var plan *vmResourceModel
+// 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+// 	if resp.Diagnostics.HasError() {
+// 		return
+// 	}
+
+// 	// To sort the list attributes of plan, eg: network_insterface, hard_drive
+// 	sortedHardDrive, err := sortHardDrive(ctx, plan.HardDrive)
+// 	if err != nil {
+// 		resp.Diagnostics.AddError(
+// 			"Unable to sort hard drive",
+// 			err.Error(),
+// 		)
+// 		return
+// 	}
+// 	resp.Plan.SetAttribute(ctx, path.Root("hard_drive"), sortedHardDrive)
+
+// 	sortedNetworkInterface, err := sortNetworkInterface(ctx, plan.NetworkInterface)
+// 	if err != nil {
+// 		resp.Diagnostics.AddError(
+// 			"Unable to sort network interface",
+// 			err.Error(),
+// 		)
+// 		return
+// 	}
+// 	resp.Plan.SetAttribute(ctx, path.Root("network_interface"), sortedNetworkInterface)
+// }
+
 func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan vmResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -88,20 +122,19 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 	}
 
 	// Set some configure field
-	otherConfig, err := getVMOtherConfig(ctx, plan)
+	otherConfig, err := getVMOtherConfigFromPlan(ctx, plan)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to get VM other config",
-			err.Error(),
+			"Error on other config",
+			"Unexpected error: "+err.Error(),
 		)
 		return
 	}
-
-	err = xenapi.VM.SetOtherConfig(r.session, vmRef, otherConfig)
+	err = setVMOtherConfig(r.session, vmRef, otherConfig)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to set VM other config",
-			err.Error(),
+			"Error set other config",
+			"Could not set other config, unexpected error: "+err.Error(),
 		)
 		return
 	}
@@ -116,7 +149,17 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
-	// Overwrite plan with refreshed resource state
+	// set VIFs
+	_, err = createVIFs(ctx, plan, vmRef, r.session)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to create VIFs",
+			err.Error(),
+		)
+		return
+	}
+
+	// Overwrite data with refreshed resource state
 	vmRecord, err := xenapi.VM.GetRecord(r.session, vmRef)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -130,15 +173,6 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to update VM resource model state",
-			err.Error(),
-		)
-		return
-	}
-
-	plan.HardDrive, err = sortHardDrive(ctx, plan.HardDrive)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to sort hard drive",
 			err.Error(),
 		)
 		return
@@ -196,6 +230,8 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
+	tflog.Debug(ctx, "+++++++++++++"+plan.TemplateName.ValueString())
+	tflog.Debug(ctx, "*************"+state.TemplateName.ValueString())
 	if plan.TemplateName != state.TemplateName {
 		resp.Diagnostics.AddError(
 			"Unable to change template name",
@@ -224,7 +260,7 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	otherConfig, err := getVMOtherConfig(ctx, plan)
+	otherConfig, err := getVMOtherConfigFromPlan(ctx, plan)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to get VM other config",
@@ -233,7 +269,7 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	err = xenapi.VM.SetOtherConfig(r.session, vmRef, otherConfig)
+	err = setVMOtherConfig(r.session, vmRef, otherConfig)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to set VM other config",
@@ -265,15 +301,6 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to update VM resource model state",
-			err.Error(),
-		)
-		return
-	}
-
-	plan.HardDrive, err = sortHardDrive(ctx, plan.HardDrive)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to sort hard drive",
 			err.Error(),
 		)
 		return

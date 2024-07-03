@@ -67,7 +67,7 @@ func createVBD(vbd vbdResourceModel, vmRef xenapi.VMRef, session *xenapi.Session
 	}
 
 	if len(userDevices) == 0 {
-		return vbdRef, errors.New("unable to find available devices to attach to vm " + string(vmRef))
+		return vbdRef, errors.New("unable to find available vbd devices to attach to vm " + string(vmRef))
 	}
 
 	vbdRecord := xenapi.VBDRecord{
@@ -131,6 +131,8 @@ func sortHardDrive(ctx context.Context, unSortedList basetypes.ListValue) (baset
 	sort.Slice(vbdList, func(i, j int) bool {
 		return vbdList[i].VDI.ValueString() < vbdList[j].VDI.ValueString()
 	})
+
+	tflog.Debug(ctx, "++++++++++++++++++++++ plan "+vbdList[0].Mode.String())
 
 	listValue, diags = types.ListValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbdList)
 	if diags.HasError() {
