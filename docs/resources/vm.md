@@ -55,6 +55,10 @@ Optional:
 - `bootable` (Boolean) Set VBD as bootable, Default: false
 - `mode` (String) The mode the VBD should be mounted with, Default: RW
 
+Read-Only:
+
+- `vbd_ref` (String) VBD Reference
+
 ## Import
 
 Import is supported using the following syntax:
