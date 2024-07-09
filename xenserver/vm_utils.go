@@ -3,7 +3,6 @@ package xenserver
 import (
 	"context"
 	"errors"
-	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -14,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"xenapi"
 )
@@ -122,8 +122,8 @@ type vmResourceModel struct {
 	NameLabel        types.String `tfsdk:"name_label"`
 	TemplateName     types.String `tfsdk:"template_name"`
 	OtherConfig      types.Map    `tfsdk:"other_config"`
-	HardDrive        types.List   `tfsdk:"hard_drive"`
-	NetworkInterface types.List   `tfsdk:"network_interface"`
+	HardDrive        types.Set    `tfsdk:"hard_drive"`
+	NetworkInterface types.Set    `tfsdk:"network_interface"`
 	UUID             types.String `tfsdk:"id"`
 }
 
@@ -137,15 +137,15 @@ func VMSchema() map[string]schema.Attribute {
 			MarkdownDescription: "The template name of the virtual machine which cloned from",
 			Required:            true,
 		},
-		"hard_drive": schema.ListNestedAttribute{
-			MarkdownDescription: "A list of hard drive attributes to attach to the virtual machine",
+		"hard_drive": schema.SetNestedAttribute{
+			MarkdownDescription: "A set of hard drive attributes to attach to the virtual machine",
 			NestedObject: schema.NestedAttributeObject{
 				Attributes: VBDSchema(),
 			},
 			Required: true,
 		},
-		"network_interface": schema.ListNestedAttribute{
-			MarkdownDescription: "A list of network interface attributes to attach to the virtual machine",
+		"network_interface": schema.SetNestedAttribute{
+			MarkdownDescription: "A set of network interface attributes to attach to the virtual machine",
 			NestedObject: schema.NestedAttributeObject{
 				Attributes: VIFSchema(),
 			},
@@ -428,18 +428,18 @@ func updateVMResourceModel(ctx context.Context, session *xenapi.Session, vmRecor
 	return updateVMResourceModelComputed(ctx, session, vmRecord, data)
 }
 
-func getVBDsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) (basetypes.ListValue, error) {
-	var vbdList []vbdResourceModel
-	var listValue basetypes.ListValue
+func getVBDsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) (basetypes.SetValue, error) {
+	var vbdSet []vbdResourceModel
+	var setValue basetypes.SetValue
 	for _, vbdRef := range vmRecord.VBDs {
 		vbdRecord, err := xenapi.VBD.GetRecord(session, vbdRef)
 		if err != nil {
-			return listValue, errors.New("unable to get VBD record")
+			return setValue, errors.New("unable to get VBD record")
 		}
 
 		vdiRecord, err := xenapi.VDI.GetRecord(session, vbdRecord.VDI)
 		if err != nil {
-			return listValue, errors.New("unable to get VDI record")
+			return setValue, errors.New("unable to get VDI record")
 		}
 
 		vbd := vbdResourceModel{
@@ -449,65 +449,65 @@ func getVBDsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord 
 			Mode:     types.StringValue(string(vbdRecord.Mode)),
 		}
 
-		vbdList = append(vbdList, vbd)
+		vbdSet = append(vbdSet, vbd)
 	}
 
 	// sort vbdList by VDI UUID
-	sort.Slice(vbdList, func(i, j int) bool {
-		return vbdList[i].VDI.ValueString() < vbdList[j].VDI.ValueString()
-	})
+	// sort.Slice(vbdList, func(i, j int) bool {
+	// 	return vbdList[i].VDI.ValueString() < vbdList[j].VDI.ValueString()
+	// })
 
-	listValue, diags := types.ListValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbdList)
+	setValue, diags := types.SetValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbdSet)
 	if diags.HasError() {
-		return listValue, errors.New("unable to get VBD list value")
+		return setValue, errors.New("unable to get VBD set value")
 	}
 
-	return listValue, nil
+	tflog.Debug(ctx, "---------------  setVaule VDB "+setValue.String())
+	return setValue, nil
 }
 
-func getVIFsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) (basetypes.ListValue, error) {
-	var vifList []vifResourceModel
-	var listValue basetypes.ListValue
+func getVIFsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) (basetypes.SetValue, error) {
+	var vifSet []vifResourceModel
+	var setValue basetypes.SetValue
 	var diags diag.Diagnostics
 	for _, vifRef := range vmRecord.VIFs {
 		vifRecord, err := xenapi.VIF.GetRecord(session, vifRef)
 		if err != nil {
-			return listValue, errors.New(err.Error())
+			return setValue, errors.New(err.Error())
 		}
 
 		//get network uuid
 		networkRecord, err := xenapi.Network.GetRecord(session, vifRecord.Network)
 		if err != nil {
-			return listValue, errors.New(err.Error())
+			return setValue, errors.New(err.Error())
 		}
 
 		vif := vifResourceModel{
 			Network: types.StringValue(string(networkRecord.UUID)),
 			VIF:     types.StringValue(string(vifRef)),
 			MTU:     types.Int64Value(int64(vifRecord.MTU)),
-			MAC:     types.StringValue(vifRecord.MAC),
-		}
-		// tflog.Debug(ctx, "-----------vifList.Network--------"+vif.Network.ValueString())
-		// tflog.Debug(ctx, "-----------vifList.VIF--------"+vif.VIF.ValueString())
-		// tflog.Debug(ctx, "-----------vifList.MAC--------"+vif.MAC.ValueString())
-
-		vif.OtherConfig, diags = types.MapValueFrom(ctx, types.StringType, vifRecord.OtherConfig)
-		if diags.HasError() {
-			return listValue, errors.New("unable to read VIF other config")
+			// MAC:     types.StringValue(vifRecord.MAC),
 		}
 
-		vifList = append(vifList, vif)
+		// vif.OtherConfig, diags = types.MapValueFrom(ctx, types.StringType, vifRecord.OtherConfig)
+		// if diags.HasError() {
+		// 	return setValue, errors.New("unable to read VIF other config")
+		// }
+
+		vifSet = append(vifSet, vif)
 	}
 
 	// sort vifList by Network UUID
-	sort.Slice(vifList, func(i, j int) bool {
-		return vifList[i].Network.ValueString() < vifList[j].Network.ValueString()
-	})
+	// sort.Slice(vifList, func(i, j int) bool {
+	// 	return vifList[i].Network.ValueString() < vifList[j].Network.ValueString()
+	// })
 
-	listValue, diags = types.ListValueFrom(ctx, types.ObjectType{AttrTypes: vifResourceModelAttrTypes}, vifList)
+	setValue, diags = types.SetValueFrom(ctx, types.ObjectType{AttrTypes: vifResourceModelAttrTypes}, vifSet)
 	if diags.HasError() {
-		return listValue, errors.New("unable to get VIF list value")
+		return setValue, errors.New("unable to get VIF set value")
 	}
 
-	return listValue, nil
+	tflog.Debug(ctx, "++++++++++++++++++++++ setVaule VIF "+setValue.String())
+
+	return setValue, nil
 }

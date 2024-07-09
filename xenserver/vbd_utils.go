@@ -3,7 +3,6 @@ package xenserver
 import (
 	"context"
 	"errors"
-	"sort"
 	"xenapi"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -11,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
@@ -120,27 +118,27 @@ func createVBDs(ctx context.Context, data vmResourceModel, vmRef xenapi.VMRef, s
 }
 
 // sortHardDrive sorts the HardDrive list based on VDI UUID, this is required to compare the VBDs in plan and state
-func sortHardDrive(ctx context.Context, unSortedList basetypes.ListValue) (basetypes.ListValue, error) {
-	var listValue basetypes.ListValue
-	vbdList := make([]vbdResourceModel, 0, len(unSortedList.Elements()))
-	diags := unSortedList.ElementsAs(ctx, &vbdList, false)
-	if diags.HasError() {
-		return listValue, errors.New("unable to get VBD list")
-	}
+// func sortHardDrive(ctx context.Context, unSortedList basetypes.ListValue) (basetypes.ListValue, error) {
+// 	var listValue basetypes.ListValue
+// 	vbdList := make([]vbdResourceModel, 0, len(unSortedList.Elements()))
+// 	diags := unSortedList.ElementsAs(ctx, &vbdList, false)
+// 	if diags.HasError() {
+// 		return listValue, errors.New("unable to get VBD list")
+// 	}
 
-	sort.Slice(vbdList, func(i, j int) bool {
-		return vbdList[i].VDI.ValueString() < vbdList[j].VDI.ValueString()
-	})
+// 	sort.Slice(vbdList, func(i, j int) bool {
+// 		return vbdList[i].VDI.ValueString() < vbdList[j].VDI.ValueString()
+// 	})
 
-	tflog.Debug(ctx, "++++++++++++++++++++++ plan "+vbdList[0].Mode.String())
+// 	tflog.Debug(ctx, "++++++++++++++++++++++ plan "+vbdList[0].Mode.String())
 
-	listValue, diags = types.ListValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbdList)
-	if diags.HasError() {
-		return listValue, errors.New("unable to get VBD list value")
-	}
+// 	listValue, diags = types.ListValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbdList)
+// 	if diags.HasError() {
+// 		return listValue, errors.New("unable to get VBD list value")
+// 	}
 
-	return listValue, nil
-}
+// 	return listValue, nil
+// }
 
 func updateVBDs(ctx context.Context, plan vmResourceModel, state vmResourceModel, vmRef xenapi.VMRef, session *xenapi.Session) error {
 	// Get VBDs from plan and state

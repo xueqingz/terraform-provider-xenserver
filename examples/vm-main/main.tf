@@ -63,6 +63,11 @@ resource "xenserver_vm" "vm" {
     #   }
     # },
     {
+      other_config = {
+        ethtool-gso = "off"
+
+      }
+      mac          = "00:11:22:33:44:55",
       network_uuid = data.xenserver_network.network.data_items[1].uuid,
     },
   ]

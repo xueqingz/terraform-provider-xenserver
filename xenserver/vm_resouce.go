@@ -230,8 +230,6 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	tflog.Debug(ctx, "+++++++++++++"+plan.TemplateName.ValueString())
-	tflog.Debug(ctx, "*************"+state.TemplateName.ValueString())
 	if plan.TemplateName != state.TemplateName {
 		resp.Diagnostics.AddError(
 			"Unable to change template name",
@@ -282,6 +280,15 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to update VBDs",
+			err.Error(),
+		)
+		return
+	}
+
+	err = updateVIFs(ctx, plan, state, vmRef, r.session)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to update VIFs",
 			err.Error(),
 		)
 		return
