@@ -16,6 +16,9 @@ resource "xenserver_vdi" "vdi2" {
 resource "xenserver_vm" "vm" {
   name_label    = "A test virtual-machine"
   template_name = "Windows 11"
+  static_mem_max   = 4 * 1024 * 1024 * 1024
+  vcpus            = 4
+  cores_per_socket = 2
   hard_drive = [
     {
       vdi_uuid = xenserver_vdi.vdi1.uuid,

@@ -25,6 +25,7 @@ resource "xenserver_vdi" "vdi1" {
   sr_uuid      = data.xenserver_sr.sr.data_items[0].uuid
   virtual_size = 100 * 1024 * 1024 * 1024
 }
+
 resource "xenserver_vdi" "vdi2" {
   name_label   = "local-storage-vdi-2"
   sr_uuid      = data.xenserver_sr.sr.data_items[0].uuid
@@ -34,6 +35,9 @@ resource "xenserver_vdi" "vdi2" {
 resource "xenserver_vm" "vm" {
   name_label    = "A test virtual-machine"
   template_name = "Windows 11"
+  static_mem_max = 4 * 1024 * 1024 * 1024
+  vcpus         = 4
+  cores_per_socket = 2
   hard_drive = [
     {
       vdi_uuid = xenserver_vdi.vdi1.uuid,

@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
-func testAccVMResourceConfig(name_label string) string {
+func testAccVMResourceConfig(name_label string, memory int64, vcpu int64) string {
 	return fmt.Sprintf(`
 data "xenserver_sr" "sr" {
   name_label = "Local storage"
@@ -22,6 +22,8 @@ resource "xenserver_vdi" "vdi" {
 resource "xenserver_vm" "test_vm" {
   name_label = "%s"
   template_name = "Windows 11"
+  static_mem_max = %d * 1024 * 1024 * 1024
+  vcpus         = %d
   hard_drive = [
     { 
       vdi_uuid = xenserver_vdi.vdi.uuid,
@@ -33,7 +35,7 @@ resource "xenserver_vm" "test_vm" {
   	"flag" = "1"
   }
 }
-`, name_label)
+`, name_label, memory, vcpu)
 }
 
 func TestAccVMResource(t *testing.T) {
@@ -42,10 +44,16 @@ func TestAccVMResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				Config: providerConfig + testAccVMResourceConfig("test vm 1"),
+				Config: providerConfig + testAccVMResourceConfig("test vm 1", 4, 4),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "name_label", "test vm 1"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "template_name", "Windows 11"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "static_mem_min", "4294967296"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "static_mem_max", "4294967296"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "dynamic_mem_min", "4294967296"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "dynamic_mem_max", "4294967296"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "vcpus", "4"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "cores_per_socket", "1"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "hard_drive.#", "1"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "hard_drive.0.%", "4"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "hard_drive.0.mode", "RW"),
@@ -70,10 +78,16 @@ func TestAccVMResource(t *testing.T) {
 			},
 			// Update and Read testing
 			{
-				Config: providerConfig + testAccVMResourceConfig("test vm 2"),
+				Config: providerConfig + testAccVMResourceConfig("test vm 2", 3, 3),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "name_label", "test vm 2"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "template_name", "Windows 11"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "static_mem_min", "3221225472"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "static_mem_max", "3221225472"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "dynamic_mem_min", "3221225472"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "dynamic_mem_max", "3221225472"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "vcpus", "3"),
+					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "cores_per_socket", "1"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "other_config.%", "1"),
 					resource.TestCheckResourceAttr("xenserver_vm.test_vm", "other_config.flag", "1"),
 				),

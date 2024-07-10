@@ -116,6 +116,26 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
+	// Set memory
+	err = updateVMMemory(ctx, r.session, vmRef, plan)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to set VM memory",
+			err.Error(),
+		)
+		return
+	}
+
+	// Set VCPUs
+	err = updateVMCPUs(r.session, vmRef, plan)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to set VM VCPUs",
+			err.Error(),
+		)
+		return
+	}
+
 	// Overwrite plan with refreshed resource state
 	vmRecord, err := xenapi.VM.GetRecord(r.session, vmRef)
 	if err != nil {
@@ -246,6 +266,24 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to update VBDs",
+			err.Error(),
+		)
+		return
+	}
+
+	err = updateVMMemory(ctx, r.session, vmRef, plan)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to update VM memory",
+			err.Error(),
+		)
+		return
+	}
+
+	err = updateVMCPUs(r.session, vmRef, plan)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to update VM VCPUs",
 			err.Error(),
 		)
 		return
