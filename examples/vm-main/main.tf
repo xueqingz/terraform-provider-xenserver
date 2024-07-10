@@ -44,37 +44,15 @@ resource "xenserver_vm" "vm" {
     },
     {
       vdi_uuid = xenserver_vdi.vdi2.id,
-      bootable = false,
       mode     = "RO"
     },
   ]
   network_interface = [
-    # {
-    #   network_uuid = data.xenserver_network.network.data_items[0].uuid,
-    #   mtu          = 1500,
-    #   mac          = "00:11:22:33:44:55",
-    #   other_config = {
-    #     ethtool-gso = "off"
-    #     ethtool-ufo = "off"
-    #     ethtool-tso = "off"
-    #     ethtool-sg = "off"
-    #     ethtool-tx = "off"
-    #     ethtool-rx = "off"
-    #   }
-    # },
     {
       other_config = {
         ethtool-gso = "off"
-
-      }
-      mac          = "00:11:22:33:44:55",
-      network_uuid = data.xenserver_network.network.data_items[1].uuid,
+      },
+      network_uuid = data.xenserver_network.network.data_items[2].uuid,
     },
   ]
 }
-
-output "vm_out" {
-  value = xenserver_vm.vm
-}
-
-

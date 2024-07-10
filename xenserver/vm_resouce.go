@@ -112,6 +112,7 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
+	// add some extra configure field to vm ----------------
 	err = xenapi.VM.SetIsATemplate(r.session, vmRef, false)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -121,26 +122,18 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
-	// Set some configure field
-	otherConfig, err := getVMOtherConfigFromPlan(ctx, plan)
+	// add other_config
+	err = setOtherConfigFromPlan(ctx, r.session, plan, vmRef)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Error on other config",
-			"Unexpected error: "+err.Error(),
-		)
-		return
-	}
-	err = setVMOtherConfig(r.session, vmRef, otherConfig)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error set other config",
-			"Could not set other config, unexpected error: "+err.Error(),
+			"Unable to set other config",
+			err.Error(),
 		)
 		return
 	}
 
-	// set VBDs
-	_, err = createVBDs(ctx, plan, vmRef, r.session)
+	// add hard_drive
+	err = createVBDs(ctx, plan, vmRef, r.session)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to create VBDs",
@@ -149,8 +142,8 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		return
 	}
 
-	// set VIFs
-	_, err = createVIFs(ctx, plan, vmRef, r.session)
+	// add network_interface
+	err = createVIFs(ctx, plan, vmRef, r.session)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to create VIFs",
@@ -168,6 +161,8 @@ func (r *vmResource) Create(ctx context.Context, req resource.CreateRequest, res
 		)
 		return
 	}
+
+	tflog.Debug(ctx, "---------------!  vm config finish ")
 
 	err = updateVMResourceModelComputed(ctx, r.session, vmRecord, &plan)
 	if err != nil {
@@ -230,10 +225,11 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	if plan.TemplateName != state.TemplateName {
+	err := vmResourceModelUpdateCheck(plan, state)
+	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to change template name",
-			"The template name doesn't expected to be updated",
+			"Unable to update VM resource",
+			err.Error(),
 		)
 		return
 	}
@@ -248,47 +244,11 @@ func (r *vmResource) Update(ctx context.Context, req resource.UpdateRequest, res
 		return
 	}
 
-	// Update existing vm resource with new plan
-	err = xenapi.VM.SetNameLabel(r.session, vmRef, plan.NameLabel.ValueString())
+	// update vm
+	err = vmResourceModelUpdate(ctx, r.session, vmRef, plan, state)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to set VM name label",
-			err.Error(),
-		)
-		return
-	}
-
-	otherConfig, err := getVMOtherConfigFromPlan(ctx, plan)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to get VM other config",
-			err.Error(),
-		)
-		return
-	}
-
-	err = setVMOtherConfig(r.session, vmRef, otherConfig)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to set VM other config",
-			err.Error(),
-		)
-		return
-	}
-
-	err = updateVBDs(ctx, plan, state, vmRef, r.session)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to update VBDs",
-			err.Error(),
-		)
-		return
-	}
-
-	err = updateVIFs(ctx, plan, state, vmRef, r.session)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to update VIFs",
+			"Unable to update VM",
 			err.Error(),
 		)
 		return
@@ -346,5 +306,5 @@ func (r *vmResource) Delete(ctx context.Context, req resource.DeleteRequest, res
 }
 
 func (r *vmResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resource.ImportStatePassthroughID(ctx, path.Root("uuid"), req, resp)
 }

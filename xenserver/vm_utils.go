@@ -12,7 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+	// "github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"xenapi"
@@ -124,7 +124,8 @@ type vmResourceModel struct {
 	OtherConfig      types.Map    `tfsdk:"other_config"`
 	HardDrive        types.Set    `tfsdk:"hard_drive"`
 	NetworkInterface types.Set    `tfsdk:"network_interface"`
-	UUID             types.String `tfsdk:"id"`
+	UUID             types.String `tfsdk:"uuid"`
+	ID               types.String `tfsdk:"id"`
 }
 
 func VMSchema() map[string]schema.Attribute {
@@ -159,7 +160,15 @@ func VMSchema() map[string]schema.Attribute {
 			Default:             mapdefault.StaticValue(types.MapValueMust(types.StringType, map[string]attr.Value{})),
 		},
 		"id": schema.StringAttribute{
-			MarkdownDescription: "UUID of the virtual machine",
+			MarkdownDescription: "The test id of the virtual machine",
+			Computed:            true,
+			// attributes which are not configurable and that should not show updates from the existing state value
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
+			},
+		},
+		"uuid": schema.StringAttribute{
+			MarkdownDescription: "The UUID of the virtual machine",
 			Computed:            true,
 			// attributes which are not configurable and that should not show updates from the existing state value
 			PlanModifiers: []planmodifier.String{
@@ -362,53 +371,59 @@ func getFirstTemplate(session *xenapi.Session, templateName string) (xenapi.VMRe
 	return vmRef, errors.New("unable to find VM template ref")
 }
 
-// Get vmResourceModel OtherConfig base on data
-func getVMOtherConfigFromPlan(ctx context.Context, plan vmResourceModel) (map[string]string, error) {
+func setOtherConfigFromPlan(ctx context.Context, session *xenapi.Session, plan vmResourceModel, vmRef xenapi.VMRef) error  {
 	otherConfig := make(map[string]string)
-	if !plan.OtherConfig.IsNull() {
+	if !plan.OtherConfig.IsUnknown() {
 		diags := plan.OtherConfig.ElementsAs(ctx, &otherConfig, false)
 		if diags.HasError() {
-			return nil, errors.New("unable to read VM other config")
+			return errors.New("unable to read VM other config")
 		}
 	}
-
 	otherConfig["template_name"] = plan.TemplateName.ValueString()
-	return otherConfig, nil
-}
 
-func setVMOtherConfig(session *xenapi.Session, vmRef xenapi.VMRef, otherConfig map[string]string) error {
 	originalOtherConfig, err := xenapi.VM.GetOtherConfig(session, vmRef)
 	if err != nil {
 		return errors.New(err.Error())
 	}
 
 	for key, value := range otherConfig {
-		// if the key already exists in originalOtherConfig, skip it, otherwise add it
-		if _, ok := originalOtherConfig[key]; ok {
-			continue
-		}
+		// if the key already exists in originalOtherConfig, update it, otherwise add it
+		originalOtherConfig[key] = value	
+	}
 
-		err = xenapi.VM.AddToOtherConfig(session, vmRef, key, value)
-		if err != nil {
-			return errors.New(err.Error())
-		}
+	err = xenapi.VM.SetOtherConfig(session, vmRef, originalOtherConfig)
+	if err != nil {
+		return errors.New(err.Error())
 	}
 
 	return nil
 }
 
 func updateVMResourceModelComputed(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord, data *vmResourceModel) error {
-	var err error
 	data.UUID = types.StringValue(vmRecord.UUID)
-	data.HardDrive, err = getVBDsFromVMRecord(ctx, session, vmRecord)
+	data.ID = types.StringValue(vmRecord.UUID)
+	vbds, err := getVBDsFromVMRecord(ctx, session, vmRecord)
 	if err != nil {
 		return err
 	}
+	hardDrive, diags := types.SetValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbds)
+	if diags.HasError() {
+		return errors.New("unable to get hard_drive")
+	}
+	data.HardDrive = hardDrive
+	tflog.Debug(ctx, "---------------  hard drive " + data.HardDrive.String())
 
-	data.NetworkInterface, err = getVIFsFromVMRecord(ctx, session, vmRecord)
+	vifs, err := getVIFsFromVMRecord(ctx, session, vmRecord)
 	if err != nil {
 		return err
 	}
+	networkInterface, diags := types.SetValueFrom(ctx, types.ObjectType{AttrTypes: vifResourceModelAttrTypes}, vifs)
+	if diags.HasError() {
+		return errors.New("unable to get network_interface")
+	}
+	data.NetworkInterface = networkInterface
+	tflog.Debug(ctx, "++++++++++++++++++++++ network interface " + data.NetworkInterface.String())
+
 
 	return nil
 }
@@ -428,18 +443,16 @@ func updateVMResourceModel(ctx context.Context, session *xenapi.Session, vmRecor
 	return updateVMResourceModelComputed(ctx, session, vmRecord, data)
 }
 
-func getVBDsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) (basetypes.SetValue, error) {
-	var vbdSet []vbdResourceModel
-	var setValue basetypes.SetValue
+func getVBDsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) ([]vbdResourceModel, error) {
+	var vbds []vbdResourceModel
 	for _, vbdRef := range vmRecord.VBDs {
 		vbdRecord, err := xenapi.VBD.GetRecord(session, vbdRef)
 		if err != nil {
-			return setValue, errors.New("unable to get VBD record")
+			return vbds, errors.New("unable to get VBD record")
 		}
-
 		vdiRecord, err := xenapi.VDI.GetRecord(session, vbdRecord.VDI)
 		if err != nil {
-			return setValue, errors.New("unable to get VDI record")
+			return vbds, errors.New("unable to get VDI record")
 		}
 
 		vbd := vbdResourceModel{
@@ -448,66 +461,81 @@ func getVBDsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord 
 			Bootable: types.BoolValue(vbdRecord.Bootable),
 			Mode:     types.StringValue(string(vbdRecord.Mode)),
 		}
-
-		vbdSet = append(vbdSet, vbd)
+		vbds = append(vbds, vbd)
 	}
 
-	// sort vbdList by VDI UUID
-	// sort.Slice(vbdList, func(i, j int) bool {
-	// 	return vbdList[i].VDI.ValueString() < vbdList[j].VDI.ValueString()
-	// })
-
-	setValue, diags := types.SetValueFrom(ctx, types.ObjectType{AttrTypes: vbdResourceModelAttrTypes}, vbdSet)
-	if diags.HasError() {
-		return setValue, errors.New("unable to get VBD set value")
-	}
-
-	tflog.Debug(ctx, "---------------  setVaule VDB "+setValue.String())
-	return setValue, nil
+	return vbds, nil
 }
 
-func getVIFsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) (basetypes.SetValue, error) {
-	var vifSet []vifResourceModel
-	var setValue basetypes.SetValue
-	var diags diag.Diagnostics
+func getVIFsFromVMRecord(ctx context.Context, session *xenapi.Session, vmRecord xenapi.VMRecord) ([]vifResourceModel, error) {
+	var vifs []vifResourceModel
 	for _, vifRef := range vmRecord.VIFs {
 		vifRecord, err := xenapi.VIF.GetRecord(session, vifRef)
 		if err != nil {
-			return setValue, errors.New(err.Error())
+			return vifs, errors.New(err.Error())
 		}
 
 		//get network uuid
 		networkRecord, err := xenapi.Network.GetRecord(session, vifRecord.Network)
 		if err != nil {
-			return setValue, errors.New(err.Error())
+			return vifs, errors.New(err.Error())
+		}
+
+		otherConfig, diags := types.MapValueFrom(ctx, types.StringType, vifRecord.OtherConfig)
+		if diags.HasError() {
+			return vifs, errors.New("unable to read VIF other config")
 		}
 
 		vif := vifResourceModel{
-			Network: types.StringValue(string(networkRecord.UUID)),
-			VIF:     types.StringValue(string(vifRef)),
-			MTU:     types.Int64Value(int64(vifRecord.MTU)),
-			// MAC:     types.StringValue(vifRecord.MAC),
+			Network:     types.StringValue(string(networkRecord.UUID)),
+			VIF:         types.StringValue(string(vifRef)),
+			MTU:         types.Int64Value(int64(vifRecord.MTU)),
+			MAC:         types.StringValue(vifRecord.MAC),
+			OtherConfig: otherConfig,
 		}
 
-		// vif.OtherConfig, diags = types.MapValueFrom(ctx, types.StringType, vifRecord.OtherConfig)
-		// if diags.HasError() {
-		// 	return setValue, errors.New("unable to read VIF other config")
-		// }
-
-		vifSet = append(vifSet, vif)
+		vifs = append(vifs, vif)
 	}
 
-	// sort vifList by Network UUID
-	// sort.Slice(vifList, func(i, j int) bool {
-	// 	return vifList[i].Network.ValueString() < vifList[j].Network.ValueString()
-	// })
+	
+	return vifs, nil
+}
 
-	setValue, diags = types.SetValueFrom(ctx, types.ObjectType{AttrTypes: vifResourceModelAttrTypes}, vifSet)
-	if diags.HasError() {
-		return setValue, errors.New("unable to get VIF set value")
+func vmResourceModelUpdateCheck(data vmResourceModel, dataState vmResourceModel) error {
+	if data.TemplateName != dataState.TemplateName {
+		return errors.New(`"template_name" doesn't expected to be updated`)
 	}
 
-	tflog.Debug(ctx, "++++++++++++++++++++++ setVaule VIF "+setValue.String())
+	return nil
+}
 
-	return setValue, nil
+func vmResourceModelUpdate(ctx context.Context, session *xenapi.Session, vmRef xenapi.VMRef, plan vmResourceModel, state  vmResourceModel) error {
+	err := xenapi.VM.SetNameLabel(session, vmRef, plan.NameLabel.ValueString())
+	if err != nil {
+		return errors.New(err.Error())
+	}
+	
+	err = setOtherConfigFromPlan(ctx, session, plan, vmRef)
+	if err != nil {
+		return err
+	}
+
+	err = updateVBDs(ctx, plan, state, vmRef, session)
+	if err != nil {
+		return err
+	}
+
+	err = updateVIFs(ctx, plan, state, vmRef, session)
+	if err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+func checkMTU(mtu int) error {
+	if mtu <= 0 {
+		return errors.New("MTU value must above 0 ")
+	}
+	return nil
 }
