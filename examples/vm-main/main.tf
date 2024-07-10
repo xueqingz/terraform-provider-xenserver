@@ -40,18 +40,15 @@ resource "xenserver_vm" "vm" {
     {
       vdi_uuid = xenserver_vdi.vdi1.id,
       bootable = true,
-      mode     = "RW"
     },
     {
       vdi_uuid = xenserver_vdi.vdi2.id,
-      mode     = "RO"
+      mode     = "RO",
+      bootable = true,
     },
   ]
   network_interface = [
     {
-      other_config = {
-        ethtool-gso = "off"
-      },
       network_uuid = data.xenserver_network.network.data_items[2].uuid,
     },
   ]

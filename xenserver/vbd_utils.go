@@ -3,6 +3,7 @@ package xenserver
 import (
 	"context"
 	"errors"
+	"strconv"
 	"xenapi"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -67,11 +68,13 @@ func createVBD(ctx context.Context, vbd vbdResourceModel, vmRef xenapi.VMRef, se
 	if !vbd.Bootable.IsUnknown() {
 		bootable = vbd.Bootable.ValueBool()
 	}
+	tflog.Debug(ctx, "+++++++++++++VBD created with bootable" + strconv.FormatBool(bootable))
 
 	mode := "RW"
-	if !vbd.Mode.IsUnknown(){
+	if !vbd.Mode.IsUnknown() {
 		mode = vbd.Mode.ValueString()
 	}
+	tflog.Debug(ctx, "+++++++++++++VBD created with mode: "+string(mode))
 
 	vbdRecord := xenapi.VBDRecord{
 		VM:         vmRef,
@@ -87,6 +90,8 @@ func createVBD(ctx context.Context, vbd vbdResourceModel, vmRef xenapi.VMRef, se
 	if err != nil {
 		return errors.New(err.Error())
 	}
+
+	tflog.Debug(ctx, "+++++++++++++VBD created with ref: "+string(vbdRef))
 
 	// plug VBDs if VM is running
 	vmPowerState, err := xenapi.VM.GetPowerState(session, vmRef)
@@ -156,16 +161,14 @@ func updateVBDs(ctx context.Context, plan vmResourceModel, state vmResourceModel
 			}
 		} else {
 			// Update VBD if attributes changed
-			if planVBD.Mode != stateVBD.Mode {
-				tflog.Debug(ctx, "---> Update VBD Mode"+stateVBD.VBD.String()+" for VDI: "+vdiUUID+" <---")
+			if (planVBD.Bootable.IsUnknown() && planVBD.Mode.ValueString() != "RW") || (!planVBD.Bootable.IsUnknown() && planVBD.Mode != stateVBD.Mode) {
 				err = xenapi.VBD.SetMode(session, xenapi.VBDRef(stateVBD.VBD.ValueString()), xenapi.VbdMode(planVBD.Mode.ValueString()))
 				if err != nil {
 					return errors.New(err.Error())
 				}
 			}
 
-			if planVBD.Bootable != stateVBD.Bootable {
-				tflog.Debug(ctx, "---> Update VBD Bootable"+stateVBD.VBD.String()+" for VDI: "+vdiUUID+" <---")
+			if (planVBD.Bootable.IsUnknown() && stateVBD.Bootable.ValueBool() != false) || (!planVBD.Bootable.IsUnknown() && planVBD.Bootable != stateVBD.Bootable) {
 				err = xenapi.VBD.SetBootable(session, xenapi.VBDRef(stateVBD.VBD.ValueString()), planVBD.Bootable.ValueBool())
 				if err != nil {
 					return errors.New(err.Error())

@@ -73,7 +73,9 @@ func createVIF(ctx context.Context, vifData vifResourceModel, vmRef xenapi.VMRef
 	}
 
 	otherConfig := make(map[string]string)
+	tflog.Debug(ctx, "+++++++++++++vifData.OtherConfig" + vifData.OtherConfig.String())
 	if !vifData.OtherConfig.IsUnknown() {
+		tflog.Debug(ctx, "+++++++++++++vifData.OtherConfig.IsUnknown")
 		diags := vifData.OtherConfig.ElementsAs(ctx, &otherConfig, false)
 		if diags.HasError() {
 			return errors.New("unable to get VIF other config")
@@ -87,9 +89,10 @@ func createVIF(ctx context.Context, vifData vifResourceModel, vmRef xenapi.VMRef
 		macAuto = true
 	}
 
-	mtu := 1500 
+	mtu := 1500
 	if !vifData.MTU.IsUnknown() {
-		err = checkMTU(int(vifData.MTU.ValueInt64()))
+		mtu = int(vifData.MTU.ValueInt64())
+		err = checkMTU(mtu)
 		if err != nil {
 			return err
 		}
@@ -181,28 +184,20 @@ func updateVIFs(ctx context.Context, plan vmResourceModel, state vmResourceModel
 				return err
 			}
 		} else {
-			if planVIF.MTU != stateVIF.MTU {
+			if (planVIF.MTU.IsUnknown() && int(stateVIF.MTU.ValueInt64()) != 1500) || (!planVIF.MTU.IsUnknown() && planVIF.MTU != stateVIF.MTU) {
 				return errors.New(`"network_interface.mtu" doesn't expected to be updated`)
 			}
-
-			if planVIF.MAC != stateVIF.MAC {
+			if (!planVIF.MAC.IsUnknown() && planVIF.MAC != stateVIF.MAC) || (planVIF.MAC.IsUnknown() && stateVIF.MAC.ValueString() != "") {
 				return errors.New(`"network_interface.mac" doesn't expected to be updated`)
 			}
 
-			if !planVIF.OtherConfig.Equal(stateVIF.OtherConfig) {
-				tflog.Debug(ctx, "---> Update VIF other config "+stateVIF.VIF.String()+" for Network: "+networkUUID+" <---")
-				otherConfig := make(map[string]string)
-				if !planVIF.OtherConfig.IsUnknown() {
-					diags := planVIF.OtherConfig.ElementsAs(ctx, &otherConfig, false)
-					if diags.HasError() {
-						return errors.New("unable to get VIF other config")
-					}
-				}
-
-				err = xenapi.VIF.SetOtherConfig(session, xenapi.VIFRef(stateVIF.VIF.ValueString()), otherConfig)
-				if err != nil {
-					return errors.New(err.Error())
-				}
+			otherConfig := make(map[string]string)
+			diags := stateVIF.OtherConfig.ElementsAs(ctx, &otherConfig, false)
+			if diags.HasError() {
+				return errors.New("unable to get network_interface.other_config")
+			}
+			if (planVIF.OtherConfig.IsUnknown() && len(otherConfig) != 0) || (!planVIF.OtherConfig.IsUnknown() && !planVIF.OtherConfig.Equal(stateVIF.OtherConfig)) {
+				return errors.New(`"network_interface.other_config" doesn't expected to be updated`)
 			}
 		}
 	}
