@@ -439,6 +439,14 @@ func (d *vmDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, res
 				MarkdownDescription: "The name of the virtual machine",
 				Optional:            true,
 			},
+			"include_template": schema.BoolAttribute{
+				MarkdownDescription: `True if you want include template in return items, default to be false`,
+				Optional:            true,
+			},
+			"include_snapshot": schema.BoolAttribute{
+				MarkdownDescription: `True if you want include snapshot in return items, default to be false`,
+				Optional:            true,
+			},
 			"data_items": schema.ListNestedAttribute{
 				MarkdownDescription: "The return items of virtual machines",
 				Computed:            true,
@@ -491,6 +499,14 @@ func (d *vmDataSource) Read(ctx context.Context, req datasource.ReadRequest, res
 		}
 
 		if !data.UUID.IsNull() && vmRecord.UUID != data.UUID.ValueString() {
+			continue
+		}
+
+		if (data.IncludeTemplate.IsNull() || !data.IncludeTemplate.ValueBool()) && (vmRecord.IsATemplate || vmRecord.IsDefaultTemplate) {
+			continue
+		}
+
+		if (data.IncludeSnapshot.IsNull() || !data.IncludeSnapshot.ValueBool()) && vmRecord.SnapshotOf != "OpaqueRef:NULL" {
 			continue
 		}
 

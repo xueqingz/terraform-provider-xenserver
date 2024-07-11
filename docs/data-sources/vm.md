@@ -17,6 +17,8 @@ Provides information about the virtual machine (VM) of XenServer
 
 ### Optional
 
+- `include_snapshot` (Boolean) True if you want include snapshot in return items, default to be false
+- `include_template` (Boolean) True if you want include template in return items, default to be false
 - `name_label` (String) The name of the virtual machine
 - `uuid` (String) The UUID of the virtual machine
 

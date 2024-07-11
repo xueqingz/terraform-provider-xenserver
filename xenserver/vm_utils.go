@@ -19,9 +19,11 @@ import (
 )
 
 type vmDataSourceModel struct {
-	UUID      types.String   `tfsdk:"uuid"`
-	NameLabel types.String   `tfsdk:"name_label"`
-	DataItems []vmRecordData `tfsdk:"data_items"`
+	UUID            types.String   `tfsdk:"uuid"`
+	NameLabel       types.String   `tfsdk:"name_label"`
+	IncludeTemplate types.Bool     `tfsdk:"include_template"`
+	IncludeSnapshot types.Bool     `tfsdk:"include_snapshot"`
+	DataItems       []vmRecordData `tfsdk:"data_items"`
 }
 
 type vmRecordData struct {
